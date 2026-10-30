@@ -1,0 +1,28 @@
+# Minimal example: NodeMCU (ESP8266) listening on the Watts R/T line via a
+# 10k / 20k divider into D5 (GPIO14). Read-only.
+esphome:
+  name: watts-bus-example
+
+esp8266:
+  board: nodemcuv2
+
+external_components:
+  - source:
+      type: local
+      path: components
+
+logger:
+
+watts_bus:
+  pin: GPIO14
+  stale_timeout: 10min
+
+sensor:
+  - platform: watts_bus
+    thermostat_id: 0x4584
+    temperature:
+      name: "Home Office Temperature"
+    setpoint:
+      name: "Home Office Setpoint"
+    heat_demand:
+      name: "Home Office Heat Demand"

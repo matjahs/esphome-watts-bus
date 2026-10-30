@@ -10,6 +10,7 @@ enable_testing()
 add_executable(decoder_test
   tests/decoder_test.cpp
   components/watts_bus/decoder.cpp
+        components/watts_bus/decoder.h
 )
 target_include_directories(decoder_test PRIVATE components/watts_bus)
 target_compile_definitions(decoder_test PRIVATE
