@@ -62,6 +62,7 @@ void WattsBus::loop() {
     decoder_.flush();
     WattsMessage msg;
     if (decoder_.pop(msg)) dispatch_(msg);
+    log_rejected_();
   }
 
   uint32_t now_ms = millis();
@@ -89,12 +90,36 @@ void WattsBus::drain_edges_() {
 
     WattsMessage msg;
     if (decoder_.pop(msg)) dispatch_(msg);
+    log_rejected_();
+  }
+}
+
+// Bursts that are not thermostat reports, e.g. traffic from the connection box.
+// Logged as level:duration_us so the protocol can be worked out from the log.
+void WattsBus::log_rejected_() {
+  std::vector<Edge> edges;
+  if (!decoder_.pop_rejected(edges)) return;
+
+  ESP_LOGD(TAG, "Undecoded burst, %u edges:", (unsigned) edges.size());
+  static constexpr size_t PER_LINE = 16;
+  for (size_t start = 0; start < edges.size(); start += PER_LINE) {
+    std::string line;
+    for (size_t i = start; i < std::min(start + PER_LINE, edges.size()); i++) {
+      line += str_sprintf(" %u:%u", edges[i].level, (unsigned) edges[i].duration_us);
+    }
+    ESP_LOGD(TAG, " %s", line.c_str());
   }
 }
 
 void WattsBus::dispatch_(const WattsMessage &msg) {
   ESP_LOGD(TAG, "0x%04X: %.1f °C, setpoint %.1f °C, demand %u%% [%s]", msg.id, msg.temperature, msg.setpoint,
            msg.heat_demand, format_hex_pretty(msg.raw.data(), msg.raw.size()).c_str());
+
+  // An init frame only asks the connection box to pair; its values are not a normal report.
+  if (msg.raw[0] == FRAME_INIT) {
+    ESP_LOGI(TAG, "Thermostat 0x%04X sent a pairing (init) signal", msg.id);
+    return;
+  }
 
   for (auto *thermostat : thermostats_) {
     if (thermostat->get_id() != msg.id) continue;
