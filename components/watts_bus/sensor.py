@@ -4,10 +4,13 @@ from esphome.components import binary_sensor, sensor
 from esphome.const import (
     CONF_ID,
     CONF_TEMPERATURE,
+    DEVICE_CLASS_DURATION,
     DEVICE_CLASS_TEMPERATURE,
+    ENTITY_CATEGORY_DIAGNOSTIC,
     STATE_CLASS_MEASUREMENT,
     UNIT_CELSIUS,
     UNIT_PERCENT,
+    UNIT_SECOND,
 )
 
 from . import CONF_WATTS_BUS_ID, WattsBus, WattsThermostat
@@ -19,6 +22,7 @@ CONF_THERMOSTAT_ID = "thermostat_id"
 CONF_SETPOINT = "setpoint"
 CONF_HEAT_DEMAND = "heat_demand"
 CONF_COOLING = "cooling"
+CONF_REPORT_INTERVAL = "report_interval"
 
 CONFIG_SCHEMA = cv.Schema(
     {
@@ -46,6 +50,15 @@ CONFIG_SCHEMA = cv.Schema(
         ),
         # Only the Master H&C thermostat switches between heating and cooling.
         cv.Optional(CONF_COOLING): binary_sensor.binary_sensor_schema(icon="mdi:snowflake"),
+        # Time since the previous report of this thermostat. Lost reports show as longer intervals.
+        cv.Optional(CONF_REPORT_INTERVAL): sensor.sensor_schema(
+            unit_of_measurement=UNIT_SECOND,
+            accuracy_decimals=0,
+            device_class=DEVICE_CLASS_DURATION,
+            state_class=STATE_CLASS_MEASUREMENT,
+            entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+            icon="mdi:timer-outline",
+        ),
     }
 )
 
@@ -53,6 +66,7 @@ SENSOR_SETTERS = {
     CONF_TEMPERATURE: "set_temperature_sensor",
     CONF_SETPOINT: "set_setpoint_sensor",
     CONF_HEAT_DEMAND: "set_heat_demand_sensor",
+    CONF_REPORT_INTERVAL: "set_report_interval_sensor",
 }
 
 

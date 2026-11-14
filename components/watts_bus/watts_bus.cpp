@@ -12,6 +12,8 @@ namespace watts_bus {
 static const char *const TAG = "watts_bus";
 
 void WattsThermostat::publish(const WattsMessage &msg, uint32_t now_ms) {
+  if (report_interval_ != nullptr && seen_) report_interval_->publish_state((now_ms - last_seen_ms_) / 1000.0f);
+  seen_ = true;
   last_seen_ms_ = now_ms;
   stale_ = false;
   publish_all_(msg.temperature, msg.setpoint, msg.heat_demand);
@@ -102,6 +104,12 @@ void WattsBus::log_rejected_() {
   std::vector<Edge> edges;
   if (!decoder_.pop_rejected(edges)) return;
 
+  rejected_count_++;
+  if (rejected_bursts_ != nullptr) rejected_bursts_->publish_state(rejected_count_);
+  uint32_t duration_us = 0;
+  for (const Edge &edge : edges) duration_us += edge.duration_us;
+  for (auto *trigger : rejected_triggers_) trigger->trigger(edges.size(), duration_us);
+
   ESP_LOGD(TAG, "Undecoded burst, %u edges:", (unsigned) edges.size());
   static constexpr size_t PER_LINE = 16;
   for (size_t start = 0; start < edges.size(); start += PER_LINE) {
@@ -116,6 +124,12 @@ void WattsBus::log_rejected_() {
 void WattsBus::dispatch_(const WattsMessage &msg) {
   ESP_LOGD(TAG, "0x%04X: %.1f °C, setpoint %.1f °C, demand %u%%%s [%s]", msg.id, msg.temperature, msg.setpoint,
            msg.heat_demand, msg.cooling ? ", cooling" : "", format_hex_pretty(msg.raw.data(), msg.raw.size()).c_str());
+
+  if (!frame_triggers_.empty()) {
+    std::string raw = format_hex(msg.raw.data(), msg.raw.size());
+    for (auto *trigger : frame_triggers_)
+      trigger->trigger(msg.id, msg.raw[0], msg.temperature, msg.setpoint, msg.heat_demand, raw);
+  }
 
   // An init frame only asks the connection box to pair; its values are not a normal report.
   if (msg.raw[0] == FRAME_INIT) {
