@@ -25,6 +25,7 @@ static WattsMessage to_message(const Payload &p) {
   m.temperature = static_cast<int16_t>(p[4] << 8 | p[5]) / 10.0f;
   m.setpoint = (setpoint_raw - setpoint_raw % 5) / 10.0f;  // % 5 is the per-message toggle
   m.heat_demand = p[8];
+  m.cooling = p[0] == FRAME_REPORT_COOLING;
   m.raw = p;
   return m;
 }
@@ -121,7 +122,7 @@ bool FrameDecoder::decode_payload_(Payload &payload) const {
     }
     payload[byte] = value;
   }
-  bool known_type = payload[0] == FRAME_REPORT || payload[0] == FRAME_INIT;
+  bool known_type = payload[0] == FRAME_REPORT || payload[0] == FRAME_REPORT_COOLING || payload[0] == FRAME_INIT;
   return known_type && payload[1] == 0x38 && payload[9] == checksum(payload);
 }
 

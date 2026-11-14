@@ -1,6 +1,6 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.components import sensor
+from esphome.components import binary_sensor, sensor
 from esphome.const import (
     CONF_ID,
     CONF_TEMPERATURE,
@@ -13,10 +13,12 @@ from esphome.const import (
 from . import CONF_WATTS_BUS_ID, WattsBus, WattsThermostat
 
 DEPENDENCIES = ["watts_bus"]
+AUTO_LOAD = ["binary_sensor"]
 
 CONF_THERMOSTAT_ID = "thermostat_id"
 CONF_SETPOINT = "setpoint"
 CONF_HEAT_DEMAND = "heat_demand"
+CONF_COOLING = "cooling"
 
 CONFIG_SCHEMA = cv.Schema(
     {
@@ -42,6 +44,8 @@ CONFIG_SCHEMA = cv.Schema(
             state_class=STATE_CLASS_MEASUREMENT,
             icon="mdi:radiator",
         ),
+        # Only the Master H&C thermostat switches between heating and cooling.
+        cv.Optional(CONF_COOLING): binary_sensor.binary_sensor_schema(icon="mdi:snowflake"),
     }
 )
 
@@ -62,3 +66,7 @@ async def to_code(config):
             continue
         sens = await sensor.new_sensor(config[key])
         cg.add(getattr(thermostat, setter)(sens))
+
+    if CONF_COOLING in config:
+        cooling = await binary_sensor.new_binary_sensor(config[CONF_COOLING])
+        cg.add(thermostat.set_cooling_binary_sensor(cooling))

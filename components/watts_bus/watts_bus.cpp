@@ -15,6 +15,7 @@ void WattsThermostat::publish(const WattsMessage &msg, uint32_t now_ms) {
   last_seen_ms_ = now_ms;
   stale_ = false;
   publish_all_(msg.temperature, msg.setpoint, msg.heat_demand);
+  if (cooling_ != nullptr) cooling_->publish_state(msg.cooling);
 }
 
 void WattsThermostat::check_stale(uint32_t now_ms, uint32_t timeout_ms) {
@@ -23,6 +24,7 @@ void WattsThermostat::check_stale(uint32_t now_ms, uint32_t timeout_ms) {
   stale_ = true;
   ESP_LOGW(TAG, "Thermostat 0x%04X silent for %u s, marking unavailable", id_, (unsigned) (timeout_ms / 1000));
   publish_all_(NAN, NAN, NAN);
+  if (cooling_ != nullptr) cooling_->invalidate_state();
 }
 
 void WattsThermostat::publish_all_(float temperature, float setpoint, float heat_demand) {
@@ -112,8 +114,8 @@ void WattsBus::log_rejected_() {
 }
 
 void WattsBus::dispatch_(const WattsMessage &msg) {
-  ESP_LOGD(TAG, "0x%04X: %.1f °C, setpoint %.1f °C, demand %u%% [%s]", msg.id, msg.temperature, msg.setpoint,
-           msg.heat_demand, format_hex_pretty(msg.raw.data(), msg.raw.size()).c_str());
+  ESP_LOGD(TAG, "0x%04X: %.1f °C, setpoint %.1f °C, demand %u%%%s [%s]", msg.id, msg.temperature, msg.setpoint,
+           msg.heat_demand, msg.cooling ? ", cooling" : "", format_hex_pretty(msg.raw.data(), msg.raw.size()).c_str());
 
   // An init frame only asks the connection box to pair; its values are not a normal report.
   if (msg.raw[0] == FRAME_INIT) {
