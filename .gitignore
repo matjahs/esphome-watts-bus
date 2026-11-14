@@ -3,4 +3,4 @@ secrets.yaml
 /build/
 *.bin
 cmake-build-*/
-.idea/
+.idea/__pycache__/
