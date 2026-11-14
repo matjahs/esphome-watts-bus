@@ -5,6 +5,7 @@ namespace watts_bus {
 
 static constexpr uint32_t GAP_US = 5000;                // idle longer than this ends a frame
 static constexpr uint64_t CONFIRM_WINDOW_US = 1500000;  // repeat must follow within 1.5 s
+static constexpr size_t MAX_KEPT_EDGES = 512;            // bounds memory if the line never goes idle
 static constexpr size_t FRAME_BITS = 104;
 static constexpr size_t PREAMBLE_BITS = 23;
 static constexpr size_t DATA_START_BIT = PREAMBLE_BITS + 1;  // after the start bit
@@ -28,6 +29,15 @@ static WattsMessage to_message(const Payload &p) {
   return m;
 }
 
+uint8_t checksum(const Payload &payload) {
+  uint8_t crc = 0x0F;
+  for (size_t i = 0; i < 8; i++) {
+    crc ^= payload[i];
+    for (int bit = 0; bit < 8; bit++) crc = static_cast<uint8_t>(crc & 0x80 ? crc << 1 ^ 0xE6 : crc << 1);
+  }
+  return crc ^ payload[8];
+}
+
 void FrameDecoder::push(const Edge &edge) {
   if (edge.level == 1 && edge.duration_us > GAP_US) {
     flush();  // the frame ended when the line went idle, before this gap
@@ -35,6 +45,7 @@ void FrameDecoder::push(const Edge &edge) {
     return;
   }
   now_us_ += edge.duration_us;
+  if (edges_.size() < MAX_KEPT_EDGES) edges_.push_back(edge);
 
   uint8_t units = units_for(edge.duration_us);
   if (units == 0) {
@@ -45,9 +56,28 @@ void FrameDecoder::push(const Edge &edge) {
 }
 
 void FrameDecoder::flush() {
-  if (!half_bits_.empty() && frame_ok_) finish_frame_();
+  if (!edges_.empty()) {
+    if (frame_ok_) {
+      finish_frame_();
+    } else {
+      reject_();
+    }
+  }
   half_bits_.clear();
+  edges_.clear();
   frame_ok_ = true;
+}
+
+bool FrameDecoder::pop_rejected(std::vector<Edge> &out) {
+  if (!has_rejected_) return false;
+  out.swap(rejected_);
+  has_rejected_ = false;
+  return true;
+}
+
+void FrameDecoder::reject_() {
+  rejected_ = edges_;
+  has_rejected_ = true;
 }
 
 bool FrameDecoder::pop(WattsMessage &out) {
@@ -61,7 +91,10 @@ void FrameDecoder::finish_frame_() {
   if (half_bits_.size() % 2 == 1) half_bits_.push_back(1);  // last half-bit merged into idle high
 
   Payload payload{};
-  if (!decode_payload_(payload)) return;
+  if (!decode_payload_(payload)) {
+    reject_();
+    return;
+  }
   confirm_(payload);
 }
 
@@ -88,7 +121,8 @@ bool FrameDecoder::decode_payload_(Payload &payload) const {
     }
     payload[byte] = value;
   }
-  return payload[0] == 0x02 && payload[1] == 0x38;
+  bool known_type = payload[0] == FRAME_REPORT || payload[0] == FRAME_INIT;
+  return known_type && payload[1] == 0x38 && payload[9] == checksum(payload);
 }
 
 void FrameDecoder::confirm_(const Payload &payload) {

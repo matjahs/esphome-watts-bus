@@ -3,7 +3,7 @@
 Read-only [ESPHome](https://esphome.io) external component for the wired **Watts BUS** used by WFHT-BASIC H&C BUS / WFHT-LCD H&C BUS thermostats and the WFHC-MASTER H&C BUS wiring centre. It listens to the thermostat bus and exposes room temperature, setpoint and heat demand per thermostat in Home Assistant.
 
 > [!IMPORTANT]
-> Read-only. The component never drives the bus. Changing setpoints from Home Assistant is not supported: the frame check byte is not yet understood.
+> Read-only. The component never drives the bus. Changing setpoints from Home Assistant is not supported. The bus is one-way (thermostat to wiring centre), see [`docs/feasibility.md`](docs/feasibility.md).
 
 ## Features
 
@@ -12,6 +12,8 @@ Read-only [ESPHome](https://esphome.io) external component for the wired **Watts
 - Accepts a message only after both transmitted copies match
 - Marks sensors unavailable when a thermostat stops reporting (`stale_timeout`)
 - Logs unconfigured thermostat IDs so you can discover them
+- Rejects frames with a wrong check byte
+- Logs pairing (init) frames, and the raw timing of bursts that do not decode
 
 ## Hardware
 
@@ -99,14 +101,25 @@ Reverse engineered from bus captures; see [`tools/`](tools/) and [`tests/fixture
 
 | Byte | Content |
 |---|---|
-| 0–1 | `02 38` header |
+| 0 | frame type: `02` report, `03` pairing (init) signal |
+| 1 | `38` |
 | 2–3 | thermostat ID |
 | 4–5 | room temperature × 10 (°C) |
 | 6–7 | setpoint × 10, plus a 0/1 toggle that alternates per message |
 | 8 | heat demand (%) |
-| 9 | check byte (XOR-linear, algorithm unknown) |
+| 9 | check byte, see below |
 
-Setpoints come in 0.5 °C steps, so `setpoint = (raw - raw % 5) / 10`.
+Setpoints come in 0.5 °C steps, so `setpoint = (raw - raw % 5) / 10`. A thermostat in OFF reports setpoint 0.
+
+Check byte: CRC-8 (polynomial `0xE6`, initial value `0x0F`) over bytes 0–7, then XOR with byte 8:
+
+```
+crc = 0x0F
+for b in bytes[0..7]: crc ^= b; repeat 8: crc = (crc & 0x80) ? (crc << 1) ^ 0xE6 : crc << 1
+bytes[9] = crc ^ bytes[8]
+```
+
+The bus has no collision avoidance. When two thermostats send at the same moment, both frames are lost.
 
 ## Development
 

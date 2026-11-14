@@ -1,8 +1,10 @@
 #include "decoder.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <set>
 #include <string>
@@ -10,7 +12,9 @@
 
 using esphome::watts_bus::Edge;
 using esphome::watts_bus::FrameDecoder;
+using esphome::watts_bus::Payload;
 using esphome::watts_bus::WattsMessage;
+using esphome::watts_bus::checksum;
 
 /**
  * @brief Tracks the number of failed test assertions in the decoder test suite.
@@ -207,11 +211,84 @@ static void test_single_copy_is_not_confirmed() {
     CHECK(decode_all(one_frame).empty());
 }
 
+static void test_rejected_burst_keeps_edges() {
+    auto edges = load_fixture("watts-capture-setpoints.txt");
+    std::vector<Edge> one_frame{edges[0]};
+    for (size_t i = 1; i < edges.size() && !(edges[i].level == 1 && edges[i].duration_us > 5000); i++) {
+        one_frame.push_back(edges[i]);
+    }
+    const size_t burst_edges = one_frame.size() - 1;  // without the leading gap
+
+    FrameDecoder good;
+    std::vector<Edge> rejected;
+    for (const Edge &e: one_frame) good.push(e);
+    good.flush();
+    CHECK(!good.pop_rejected(rejected));  // a valid frame is not rejected
+
+    one_frame[40].duration_us = 2000;  // a length that is not 1 or 2 half-bits
+    FrameDecoder bad;
+    for (const Edge &e: one_frame) bad.push(e);
+    bad.flush();
+    CHECK(bad.pop_rejected(rejected));
+    CHECK(rejected.size() == burst_edges);
+    CHECK(!rejected.empty() && rejected[39].duration_us == 2000);
+}
+
+// Frames read from the live bus on 2026-11-14.
+static void test_checksum() {
+    const Payload live[] = {
+        {0x02, 0x38, 0x45, 0x6E, 0x00, 0xCB, 0x00, 0xBF, 0x00, 0x24},
+        {0x02, 0x38, 0x70, 0x2D, 0x00, 0xCB, 0x00, 0xBF, 0x00, 0x52},
+        {0x02, 0x38, 0x45, 0x72, 0x00, 0xCB, 0x00, 0xAA, 0x00, 0xD4},
+    };
+    for (const Payload &p: live) CHECK(checksum(p) == p[9]);
+
+    Payload corrupt = live[0];
+    corrupt[5] ^= 0x01;  // one temperature bit wrong
+    CHECK(checksum(corrupt) != corrupt[9]);
+}
+
+// Manchester-encodes one frame the way a thermostat sends it, after an idle gap.
+static void encode(const Payload &p, std::vector<Edge> &out) {
+    std::vector<uint8_t> half_bits;
+    auto add_bit = [&](int bit) {
+        half_bits.push_back(bit ? 0 : 1);  // 1 = low-high, 0 = high-low
+        half_bits.push_back(bit ? 1 : 0);
+    };
+    for (int i = 0; i < 23; i++) add_bit(1);
+    add_bit(0);
+    for (uint8_t byte: p)
+        for (int bit = 7; bit >= 0; bit--) add_bit(byte >> bit & 1);
+
+    out.push_back({1, 500'000});
+    for (size_t i = 0; i < half_bits.size();) {
+        size_t run = 1;
+        while (i + run < half_bits.size() && half_bits[i + run] == half_bits[i]) run++;
+        out.push_back({half_bits[i], static_cast<uint32_t>(450 * run)});
+        i += run;
+    }
+}
+
+static void test_init_frame() {
+    const Payload init = {0x03, 0x38, 0x45, 0x72, 0x00, 0xCA, 0x00, 0x00, 0x00, 0x6C};  // live, 2026-11-14
+    std::vector<Edge> edges;
+    encode(init, edges);
+    encode(init, edges);
+    edges.push_back({1, 10'000'000});
+
+    auto msgs = decode_all(edges);
+    CHECK(msgs.size() == 1);
+    CHECK(!msgs.empty() && msgs[0].raw == init && msgs[0].id == 0x4572);
+}
+
 int main() {
+    test_checksum();
     test_setpoints();
     test_long();
     test_first_capture();
     test_single_copy_is_not_confirmed();
+    test_rejected_burst_keeps_edges();
+    test_init_frame();
 
     std::printf(failures == 0 ? "ALL PASSED\n" : "%d FAILURE(S)\n", failures);
     return failures == 0 ? 0 : 1;

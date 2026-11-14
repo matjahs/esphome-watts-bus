@@ -51,6 +51,7 @@ class WattsBus : public Component {
   static void isr(WattsBus *bus);
   void drain_edges_();
   void dispatch_(const WattsMessage &msg);
+  void log_rejected_();
 
   static constexpr size_t BUFFER_SIZE = 512;   // ~2.5 frames of edges
   static constexpr uint32_t IDLE_FLUSH_US = 5000;
