@@ -2,6 +2,7 @@
 
 #include <vector>
 
+#include "esphome/components/binary_sensor/binary_sensor.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
@@ -19,6 +20,7 @@ class WattsThermostat {
   void set_temperature_sensor(sensor::Sensor *sensor) { temperature_ = sensor; }
   void set_setpoint_sensor(sensor::Sensor *sensor) { setpoint_ = sensor; }
   void set_heat_demand_sensor(sensor::Sensor *sensor) { heat_demand_ = sensor; }
+  void set_cooling_binary_sensor(binary_sensor::BinarySensor *sensor) { cooling_ = sensor; }
 
   uint16_t get_id() const { return id_; }
   void publish(const WattsMessage &msg, uint32_t now_ms);
@@ -31,6 +33,7 @@ class WattsThermostat {
   sensor::Sensor *temperature_{nullptr};
   sensor::Sensor *setpoint_{nullptr};
   sensor::Sensor *heat_demand_{nullptr};
+  binary_sensor::BinarySensor *cooling_{nullptr};
   uint32_t last_seen_ms_{0};
   bool stale_{true};  // nothing published yet, or already marked unavailable
 };

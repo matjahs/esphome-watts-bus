@@ -15,7 +15,8 @@ namespace esphome::watts_bus {
     using Payload = std::array<uint8_t, 10>; // the 10 data bytes of a frame
 
     // payload[0]: frame type.
-    static constexpr uint8_t FRAME_REPORT = 0x02; // periodic or on-change thermostat report
+    static constexpr uint8_t FRAME_REPORT = 0x02; // periodic or on-change thermostat report, heating
+    static constexpr uint8_t FRAME_REPORT_COOLING = 0x00; // same report while the house is in cooling (CLD)
     static constexpr uint8_t FRAME_INIT = 0x03;   // pairing signal, sent when the thermostat leaves OFF for Comfort
 
     // Expected value of payload[9]: CRC-8 (poly 0xE6, init 0x0F) over bytes 0..7,
@@ -28,6 +29,7 @@ namespace esphome::watts_bus {
         float temperature;
         float setpoint;
         uint8_t heat_demand;
+        bool cooling; // reported by the Master H&C thermostat in CLD mode
         Payload raw;
     };
 

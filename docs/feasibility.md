@@ -196,3 +196,14 @@ The firmware logged every burst that did not decode, as raw level:duration pairs
 - **Mode and schedule logic is in the box.** According to the Master BUS manual, in Reduced mode the box uses each zone's comfort setpoint minus its own dt, and in Automatic mode it follows its own per-zone programs. The thermostats never need to receive anything.
 
 **Still not tested:** the box in "rF init" (pairing) mode, a heat/cool changeover, and the box's External-control input. The manual says the box only listens in "rF init". This test was skipped on purpose, because leaving the menu saves the zone assignment.
+
+## 9. Heat/cool changeover, 2026-11-14 (VERIFIED)
+
+The Living Room thermostat (0x702D) is the Master H&C thermostat. Only this thermostat can switch the house between heating (HOT) and cooling (CLD).
+
+- **In CLD mode it sends frame type `0x00`** instead of `0x02`. The layout and the check byte are the same. Example: `00 38 70 2D 00 CB 00 D3 00 FC` (20.3 °C, setpoint 21.0).
+- **Byte 0 is probably a set of flags.** Bit 1 = heating, bit 0 = init. That makes `0x02` a heating report, `0x00` a cooling report and `0x03` a heating init frame. A cooling init frame (`0x01`) was not seen (GUESS).
+- **The other thermostats did not change.** During 2 minutes of CLD, the other three thermostats continued to send `02` reports with their heating setpoints. Each thermostat has one setpoint. The box applies the night offset (`dt`) and the cooling offset (Add/Sub 2 °C per zone) itself.
+- **The Living Room reported 21.0 °C in CLD and 19.0 °C in HOT.** The master thermostat may keep a separate cooling setpoint (not confirmed).
+
+**Open question.** All thermostat displays have a heating-demand icon and a cooling-demand icon. Do the other thermostats show the cooling icon when the Living Room is in CLD? If they do, they learn the house mode from the bus (for example from the `00` frames of the Living Room), and their frames could change to `00` after some time. Test: Living Room to CLD for about 10 minutes, watch the Office display and the bus log.

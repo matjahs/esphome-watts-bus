@@ -9,6 +9,7 @@ Read-only [ESPHome](https://esphome.io) external component for the wired **Watts
 
 - Decodes every thermostat on the shared bus from a single tap point
 - Per thermostat: room temperature, setpoint, heat demand (%)
+- Heating/cooling state from the Master H&C thermostat (`cooling` binary sensor)
 - Accepts a message only after both transmitted copies match
 - Marks sensors unavailable when a thermostat stops reporting (`stale_timeout`)
 - Logs unconfigured thermostat IDs so you can discover them
@@ -60,6 +61,14 @@ sensor:
       name: "Office Setpoint"
     heat_demand:
       name: "Office Heat Demand"
+
+  # Master H&C thermostat: also report whether the house is cooling (CLD)
+  - platform: watts_bus
+    thermostat_id: 0x702D
+    temperature:
+      name: "Living Room Temperature"
+    cooling:
+      name: "Cooling"
 ```
 
 Thermostat IDs differ per installation. Flash with only the `watts_bus:` block and `logger: level: DEBUG`, then read the IDs from the log:
@@ -101,7 +110,7 @@ Reverse engineered from bus captures; see [`tools/`](tools/) and [`tests/fixture
 
 | Byte | Content |
 |---|---|
-| 0 | frame type: `02` report, `03` pairing (init) signal |
+| 0 | frame type: `02` report (heating), `00` report (cooling), `03` pairing (init) signal |
 | 1 | `38` |
 | 2–3 | thermostat ID |
 | 4–5 | room temperature × 10 (°C) |

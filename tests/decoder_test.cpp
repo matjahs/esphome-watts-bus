@@ -281,6 +281,21 @@ static void test_init_frame() {
     CHECK(!msgs.empty() && msgs[0].raw == init && msgs[0].id == 0x4572);
 }
 
+static void test_cooling_frame() {
+    const Payload cool = {0x00, 0x38, 0x70, 0x2D, 0x00, 0xCB, 0x00, 0xD3, 0x00, 0xFC};  // live, CLD, 2026-11-14
+    std::vector<Edge> edges;
+    encode(cool, edges);
+    encode(cool, edges);
+    edges.push_back({1, 10'000'000});
+
+    auto msgs = decode_all(edges);
+    CHECK(msgs.size() == 1);
+    CHECK(!msgs.empty() && msgs[0].cooling && msgs[0].id == 0x702D && near(msgs[0].setpoint, 21.0f));
+
+    auto heating = decode_all(load_fixture("watts-capture.txt"));
+    CHECK(std::none_of(heating.begin(), heating.end(), [](const WattsMessage &m) { return m.cooling; }));
+}
+
 int main() {
     test_checksum();
     test_setpoints();
@@ -289,6 +304,7 @@ int main() {
     test_single_copy_is_not_confirmed();
     test_rejected_burst_keeps_edges();
     test_init_frame();
+    test_cooling_frame();
 
     std::printf(failures == 0 ? "ALL PASSED\n" : "%d FAILURE(S)\n", failures);
     return failures == 0 ? 0 : 1;
