@@ -15,6 +15,7 @@ Read-only [ESPHome](https://esphome.io) external component for the wired **Watts
 - Logs unconfigured thermostat IDs so you can discover them
 - Rejects frames with a wrong check byte
 - Logs pairing (init) frames, and the raw timing of bursts that do not decode
+- `on_frame` / `on_rejected` triggers to forward every frame (for example to MQTT), plus diagnostic sensors: `rejected_bursts` and a per-thermostat `report_interval`
 
 ## Hardware
 
@@ -61,6 +62,12 @@ sensor:
       name: "Office Setpoint"
     heat_demand:
       name: "Office Heat Demand"
+
+  # Diagnostics: time since the previous report (lost reports show as longer gaps)
+  - platform: watts_bus
+    thermostat_id: 0x456E
+    report_interval:
+      name: "Bathroom Report Interval"
 
   # Master H&C thermostat: also report whether the house is cooling (CLD)
   - platform: watts_bus
@@ -129,6 +136,33 @@ bytes[9] = crc ^ bytes[8]
 ```
 
 The bus has no collision avoidance. When two thermostats send at the same moment, both frames are lost.
+
+## Forwarding frames
+
+`on_frame` runs for every confirmed frame, with the variables `id`, `frame_type`, `temperature`, `setpoint`, `heat_demand` and `raw` (10 bytes as hex). `on_rejected` runs for every burst that did not decode, with `edges` and `duration_us`. Example with MQTT:
+
+```yaml
+watts_bus:
+  pin: GPIO14
+  rejected_bursts:
+    name: "Rejected bursts"
+  on_frame:
+    - mqtt.publish_json:
+        topic: watts-bus/frame
+        payload: |-
+          root["id"] = str_sprintf("%04X", id);
+          root["type"] = frame_type;
+          root["temperature"] = temperature;
+          root["setpoint"] = setpoint;
+          root["heat_demand"] = heat_demand;
+          root["raw"] = raw;
+  on_rejected:
+    - mqtt.publish_json:
+        topic: watts-bus/rejected
+        payload: |-
+          root["edges"] = edges;
+          root["duration_us"] = duration_us;
+```
 
 ## Development
 

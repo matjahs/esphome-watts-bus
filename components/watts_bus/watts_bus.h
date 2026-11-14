@@ -4,6 +4,7 @@
 
 #include "esphome/components/binary_sensor/binary_sensor.h"
 #include "esphome/components/sensor/sensor.h"
+#include "esphome/core/automation.h"
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
 
@@ -21,6 +22,7 @@ class WattsThermostat {
   void set_setpoint_sensor(sensor::Sensor *sensor) { setpoint_ = sensor; }
   void set_heat_demand_sensor(sensor::Sensor *sensor) { heat_demand_ = sensor; }
   void set_cooling_binary_sensor(binary_sensor::BinarySensor *sensor) { cooling_ = sensor; }
+  void set_report_interval_sensor(sensor::Sensor *sensor) { report_interval_ = sensor; }
 
   uint16_t get_id() const { return id_; }
   void publish(const WattsMessage &msg, uint32_t now_ms);
@@ -34,9 +36,14 @@ class WattsThermostat {
   sensor::Sensor *setpoint_{nullptr};
   sensor::Sensor *heat_demand_{nullptr};
   binary_sensor::BinarySensor *cooling_{nullptr};
+  sensor::Sensor *report_interval_{nullptr};
   uint32_t last_seen_ms_{0};
+  bool seen_{false};  // at least one report since boot, so last_seen_ms_ is valid
   bool stale_{true};  // nothing published yet, or already marked unavailable
 };
+
+class FrameTrigger;
+class RejectedTrigger;
 
 // Listens read-only on the R/T line and feeds edges into the FrameDecoder.
 class WattsBus : public Component {
@@ -44,6 +51,9 @@ class WattsBus : public Component {
   void set_pin(InternalGPIOPin *pin) { pin_ = pin; }
   void set_stale_timeout(uint32_t timeout_ms) { stale_timeout_ms_ = timeout_ms; }
   void register_thermostat(WattsThermostat *thermostat) { thermostats_.push_back(thermostat); }
+  void set_rejected_bursts_sensor(sensor::Sensor *sensor) { rejected_bursts_ = sensor; }
+  void add_on_frame_trigger(FrameTrigger *trigger) { frame_triggers_.push_back(trigger); }
+  void add_on_rejected_trigger(RejectedTrigger *trigger) { rejected_triggers_.push_back(trigger); }
 
   void setup() override;
   void loop() override;
@@ -78,6 +88,23 @@ class WattsBus : public Component {
   FrameDecoder decoder_;
   std::vector<WattsThermostat *> thermostats_;
   std::vector<uint16_t> reported_unknown_;
+
+  sensor::Sensor *rejected_bursts_{nullptr};
+  uint32_t rejected_count_{0};
+  std::vector<FrameTrigger *> frame_triggers_;
+  std::vector<RejectedTrigger *> rejected_triggers_;
+};
+
+// id, frame_type (byte 0), temperature, setpoint, heat_demand, raw (10 bytes as hex)
+class FrameTrigger : public Trigger<uint16_t, uint8_t, float, float, float, std::string> {
+ public:
+  explicit FrameTrigger(WattsBus *bus) { bus->add_on_frame_trigger(this); }
+};
+
+// edges in the burst, total burst duration in µs
+class RejectedTrigger : public Trigger<uint32_t, uint32_t> {
+ public:
+  explicit RejectedTrigger(WattsBus *bus) { bus->add_on_rejected_trigger(this); }
 };
 
 }  // namespace watts_bus
